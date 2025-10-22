@@ -34,7 +34,13 @@ def extract_tables_from_pdf(filepath):
                         cleaned_row = [clean_cell(cell) for cell in row]
                         cleaned_table.append(cleaned_row)
 
-                    tables.append({"caption": caption, "data": cleaned_table})
+                    tables.append(
+                        {
+                            "caption": caption,
+                            "data": cleaned_table,
+                            "page_number": page.page_number,
+                        }
+                    )
     except Exception as e:
         print(f"PDF table extraction error: {str(e)}")
 
