@@ -1,10 +1,14 @@
 import os
 import re
 import json
+import logging
+
 import pandas as pd
 from pdfminer.high_level import extract_text
 from pdfminer.pdfparser import PDFSyntaxError
-import logging
+
+from data_extraction.table_data_processor import extract_data_from_tables
+from parsers.pdf_table_extractor import extract_tables_from_pdf
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -152,21 +156,69 @@ def extract_steel_data_from_text(text):
     }
 
 
+def merge_with_preference(text_values, table_values, table_sources):
+    """合并文本和表格提取结果，优先使用表格数值，并记录来源"""
+    combined = dict(text_values)
+    sources = {key: {"source": "text"} for key in text_values}
+
+    for key, value in table_values.items():
+        combined[key] = value
+        source_info = {"source": "table"}
+        if table_sources.get(key):
+            source_info.update({k: v for k, v in table_sources[key].items() if v is not None})
+        sources[key] = source_info
+
+    return combined, sources
+
+
 def process_pdf(pdf_path):
     """处理单个PDF文件并提取数据"""
     try:
         # 使用pdfminer提取文本
         text = extract_text(pdf_path)
 
-        # 提取钢铁数据
-        steel_data = extract_steel_data_from_text(text)
+        # 提取钢铁数据（文本）
+        text_data = extract_steel_data_from_text(text)
+
+        # 提取表格数据
+        tables = extract_tables_from_pdf(pdf_path)
+        table_data = extract_data_from_tables(tables)
+        table_sources = table_data.get("sources", {"composition": {}, "process": {}, "properties": {}})
+
+        # 合并数据，表格优先
+        composition, composition_sources = merge_with_preference(
+            text_data.get("composition", {}),
+            table_data.get("composition", {}),
+            table_sources.get("composition", {})
+        )
+        heat_treatment, heat_treatment_sources = merge_with_preference(
+            text_data.get("heat_treatment", {}),
+            table_data.get("process", {}),
+            table_sources.get("process", {})
+        )
+        mechanical_properties, mechanical_sources = merge_with_preference(
+            text_data.get("mechanical_properties", {}),
+            table_data.get("properties", {}),
+            table_sources.get("properties", {})
+        )
 
         return {
             "file_path": pdf_path,
-            "composition": steel_data["composition"],
-            "heat_treatment": steel_data["heat_treatment"],
-            "mechanical_properties": steel_data["mechanical_properties"],
-            "microstructure": steel_data["microstructure"],
+            "composition": composition,
+            "composition_sources": composition_sources,
+            "heat_treatment": heat_treatment,
+            "heat_treatment_sources": heat_treatment_sources,
+            "mechanical_properties": mechanical_properties,
+            "mechanical_properties_sources": mechanical_sources,
+            "microstructure": text_data.get("microstructure", {}),
+            "microstructure_sources": {key: {"source": "text"} for key in text_data.get("microstructure", {})},
+            "table_extraction": {
+                "composition": table_data.get("composition", {}),
+                "process": table_data.get("process", {}),
+                "properties": table_data.get("properties", {}),
+                "sources": table_sources,
+            },
+            "text_extraction": text_data,
             "text_snippet": text[:1000] + "..." if text else ""
         }
     except PDFSyntaxError as e:
@@ -182,24 +234,26 @@ def process_papers_from_directory(papers_dir):
     dataset = []
     valid_files = 0
 
-    for filename in os.listdir(papers_dir):
-        if filename.endswith(".pdf"):
-            pdf_path = os.path.join(papers_dir, filename)
-            logger.info(f"处理: {filename}")
+    pdf_files = [f for f in os.listdir(papers_dir) if f.endswith(".pdf")]
 
-            paper_data = process_pdf(pdf_path)
-            if paper_data:
-                # 检查是否提取到任何数据
-                if (paper_data["composition"] or
-                        paper_data["heat_treatment"] or
-                        paper_data["mechanical_properties"] or
-                        paper_data["microstructure"]):
-                    dataset.append(paper_data)
-                    valid_files += 1
-                else:
-                    logger.warning(f"未提取到数据: {filename}")
+    for filename in pdf_files:
+        pdf_path = os.path.join(papers_dir, filename)
+        logger.info(f"处理: {filename}")
 
-    logger.info(f"成功处理 {valid_files}/{len(dataset)} 个文件")
+        paper_data = process_pdf(pdf_path)
+        if paper_data:
+            # 检查是否提取到任何数据
+            if (paper_data["composition"] or
+                    paper_data["heat_treatment"] or
+                    paper_data["mechanical_properties"] or
+                    paper_data["microstructure"]):
+                dataset.append(paper_data)
+                valid_files += 1
+            else:
+                logger.warning(f"未提取到数据: {filename}")
+
+    total_files = len(pdf_files)
+    logger.info(f"成功处理 {valid_files}/{total_files} 个文件")
     return dataset
 
 
@@ -220,11 +274,47 @@ def save_steel_data(dataset, output_dir):
     for item in dataset:
         row = {
             "file": os.path.basename(item["file_path"]),
-            **{f"composition_{k}": v for k, v in item["composition"].items()},
-            **{f"heat_treatment_{k}": v for k, v in item["heat_treatment"].items()},
-            **{f"mechanical_{k}": v for k, v in item["mechanical_properties"].items()},
-            **{f"microstructure_{k}": v for k, v in item["microstructure"].items()}
         }
+
+        category_mappings = [
+            ("composition", "composition"),
+            ("heat_treatment", "heat_treatment"),
+            ("mechanical_properties", "mechanical"),
+            ("microstructure", "microstructure"),
+        ]
+
+        for category, prefix in category_mappings:
+            values = item.get(category, {})
+            for key, value in values.items():
+                row[f"{prefix}_{key}"] = value
+
+            sources = item.get(f"{category}_sources", {})
+            for key, source_info in sources.items():
+                row[f"{prefix}_{key}_source"] = source_info.get("source")
+                if source_info.get("page_number") is not None:
+                    row[f"{prefix}_{key}_page"] = source_info.get("page_number")
+                if source_info.get("caption"):
+                    row[f"{prefix}_{key}_caption"] = source_info.get("caption")
+
+        table_extraction = item.get("table_extraction", {})
+        table_sources = table_extraction.get("sources", {})
+
+        table_category_mappings = [
+            ("composition", "table_composition"),
+            ("process", "table_process"),
+            ("properties", "table_properties"),
+        ]
+
+        for category, prefix in table_category_mappings:
+            for key, value in table_extraction.get(category, {}).items():
+                row[f"{prefix}_{key}"] = value
+
+            for key, source_info in table_sources.get(category, {}).items():
+                if source_info.get("page_number") is not None:
+                    row[f"{prefix}_{key}_page"] = source_info.get("page_number")
+                if source_info.get("caption"):
+                    row[f"{prefix}_{key}_caption"] = source_info.get("caption")
+
         excel_data.append(row)
 
     # 转换为DataFrame并保存

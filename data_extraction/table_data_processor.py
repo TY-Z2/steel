@@ -42,9 +42,14 @@ def process_table(table_data):
         "process": {},
         "properties": {}
     }
+    sources = {
+        "composition": {},
+        "process": {},
+        "properties": {}
+    }
 
     if not table_data["data"]:
-        return results
+        return results, sources
 
     # 将表格数据转换为DataFrame
     df = pd.DataFrame(table_data["data"][1:], columns=table_data["data"][0])
@@ -88,12 +93,24 @@ def process_table(table_data):
 
                 if category == "composition":
                     results["composition"][key] = num_value
+                    sources["composition"][key] = {
+                        "caption": table_data.get("caption"),
+                        "page_number": table_data.get("page_number"),
+                    }
                 elif category == "process":
                     results["process"][key] = num_value
+                    sources["process"][key] = {
+                        "caption": table_data.get("caption"),
+                        "page_number": table_data.get("page_number"),
+                    }
                 elif category == "properties":
                     results["properties"][key] = num_value
+                    sources["properties"][key] = {
+                        "caption": table_data.get("caption"),
+                        "page_number": table_data.get("page_number"),
+                    }
 
-    return results
+    return results, sources
 
 
 def extract_data_from_tables(tables):
@@ -103,14 +120,20 @@ def extract_data_from_tables(tables):
         "process": {},
         "properties": {}
     }
+    all_sources = {
+        "composition": {},
+        "process": {},
+        "properties": {}
+    }
 
     for table in tables:
         if is_materials_table(table):
-            table_results = process_table(table)
+            table_results, table_sources = process_table(table)
 
             # 合并结果
             for category in ["composition", "process", "properties"]:
                 for key, value in table_results[category].items():
                     all_results[category][key] = value
+                    all_sources[category][key] = table_sources[category].get(key, {})
 
-    return all_results
+    return {**all_results, "sources": all_sources}
