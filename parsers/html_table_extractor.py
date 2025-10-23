@@ -1,10 +1,20 @@
 # steel_miner/parsers/html_table_extractor.py
-from bs4 import BeautifulSoup
-import pandas as pd
+try:
+    from bs4 import BeautifulSoup  # type: ignore
+except Exception:  # pragma: no cover - 缺少 bs4 时跳过 HTML 表格解析
+    BeautifulSoup = None
+
+try:
+    import pandas as pd  # type: ignore
+except Exception:  # pragma: no cover - 缺少 pandas 时返回空结果
+    pd = None
 
 
 def extract_tables_from_html(filepath):
     """从HTML文献中提取表格"""
+    if BeautifulSoup is None:
+        return []
+
     tables = []
 
     with open(filepath, "rb") as f:

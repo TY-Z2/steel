@@ -1,0 +1,8 @@
+beautifulsoup4
+camelot-py
+pandas
+pdf2image
+pdfminer.six
+pdfplumber
+pytesseract
+tabula-py

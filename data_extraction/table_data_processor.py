@@ -1,5 +1,9 @@
 # steel_miner/data_extraction/table_data_processor.py
-import pandas as pd
+try:
+    import pandas as pd  # type: ignore
+except Exception:  # pragma: no cover - 缺少 pandas 时提供兜底
+    pd = None
+
 import re
 from parsers.table_extractor import is_materials_table
 
@@ -43,7 +47,7 @@ def process_table(table_data):
         "properties": {}
     }
 
-    if not table_data["data"]:
+    if not table_data["data"] or pd is None:
         return results
 
     # 将表格数据转换为DataFrame
