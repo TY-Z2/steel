@@ -1,0 +1,51 @@
+name: Data Quality Checks
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run schema validation smoke test
+        run: |
+          python - <<'PY'
+          from data_extraction.data_quality import validate_dataset
+          import json
+          from pathlib import Path
+
+          sample = json.loads(Path('tests/data/sample_steel_data.json').read_text(encoding='utf-8'))
+          validated, errors = validate_dataset(sample)
+          if errors:
+              raise SystemExit(f"Validation errors detected: {errors}")
+          print(f"Validated {len(validated)} sample records successfully.")
+          PY
+
+      - name: Run quality checks script
+        run: |
+          python -m data_extraction.quality_checks \
+            --dataset tests/data/sample_steel_data.json \
+            --output-dir build/quality_reports \
+            --rules config/quality_rules.json
+
+      - name: Upload quality artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: quality-reports
+          path: build/quality_reports

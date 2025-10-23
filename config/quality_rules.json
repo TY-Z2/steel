@@ -1,0 +1,9 @@
+{
+  "max_austenitizing_temperature": 1200.0,
+  "max_isothermal_temperature": 900.0,
+  "max_tempering_temperature": 1500.0,
+  "max_tempering_time": 600.0,
+  "max_austenitizing_time": 180.0,
+  "max_isothermal_time": 600.0,
+  "max_carbon_equivalent": 1.0
+}

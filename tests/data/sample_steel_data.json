@@ -1,0 +1,23 @@
+[
+  {
+    "file_path": "sample.pdf",
+    "composition": {"C": 0.2, "Mn": 1.2},
+    "heat_treatment": {
+      "austenitizing_temperature": 900,
+      "tempering_temperature": 650,
+      "tempering_time": 120
+    },
+    "mechanical_properties": {"tensile_strength": 950},
+    "microstructure": {"martensite_fraction": 75},
+    "derived_metrics": {
+      "total_key_alloy_content": 1.4,
+      "carbon_equivalent": 0.4
+    },
+    "quality_metadata": {
+      "confidence": 1.0,
+      "source_page": 1,
+      "parsing_path": "process_papers_from_directory -> process_pdf -> extract_steel_data_from_text",
+      "issues": []
+    }
+  }
+]
