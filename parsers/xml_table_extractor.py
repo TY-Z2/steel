@@ -1,11 +1,22 @@
 # steel_miner/parsers/xml_table_extractor.py
 import xml.etree.ElementTree as ET
-from bs4 import BeautifulSoup
-import pandas as pd
+
+try:
+    from bs4 import BeautifulSoup  # type: ignore
+except Exception:  # pragma: no cover - 缺少 bs4 时跳过解析
+    BeautifulSoup = None
+
+try:
+    import pandas as pd  # type: ignore
+except Exception:  # pragma: no cover - 缺少 pandas 时允许继续
+    pd = None
 
 
 def extract_tables_from_xml(filepath):
     """从Elsevier XML中提取表格"""
+    if BeautifulSoup is None:
+        return []
+
     tables = []
 
     with open(filepath, "rb") as f:

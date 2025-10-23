@@ -1,10 +1,24 @@
 import os
 import re
 import json
-import pandas as pd
-from pdfminer.high_level import extract_text
-from pdfminer.pdfparser import PDFSyntaxError
+try:
+    import pandas as pd  # type: ignore
+except Exception:  # pragma: no cover - 允许在无 pandas 环境下运行部分功能
+    pd = None
+try:
+    from pdfminer.high_level import extract_text  # type: ignore
+    from pdfminer.pdfparser import PDFSyntaxError  # type: ignore
+except Exception:  # pragma: no cover - 在测试环境缺失 pdfminer 时提供兜底
+    def extract_text(_path):  # type: ignore
+        return ""
+
+    class PDFSyntaxError(Exception):  # type: ignore
+        pass
 import logging
+
+from parsers import table_extractor
+from parsers.pdf_table_extractor import extract_text_via_ocr
+from data_extraction import table_data_processor
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -157,17 +171,45 @@ def process_pdf(pdf_path):
     try:
         # 使用pdfminer提取文本
         text = extract_text(pdf_path)
+        text_source = "pdfminer"
+
+        if not text.strip():
+            logger.info("PDF 文本提取为空，尝试 OCR: %s", pdf_path)
+            text = extract_text_via_ocr(pdf_path)
+            text_source = "ocr"
+
+        if not text.strip():
+            logger.warning("OCR 后仍未获得文本: %s", pdf_path)
+
+        tables = table_extractor.extract_tables({}, filepath=pdf_path)
+        table_results = table_data_processor.extract_data_from_tables(tables)
 
         # 提取钢铁数据
         steel_data = extract_steel_data_from_text(text)
 
+        composition = {
+            **steel_data["composition"],
+            **table_results.get("composition", {}),
+        }
+        heat_treatment = {
+            **steel_data["heat_treatment"],
+            **table_results.get("process", {}),
+        }
+        mechanical_properties = {
+            **steel_data["mechanical_properties"],
+            **table_results.get("properties", {}),
+        }
+
         return {
             "file_path": pdf_path,
-            "composition": steel_data["composition"],
-            "heat_treatment": steel_data["heat_treatment"],
-            "mechanical_properties": steel_data["mechanical_properties"],
+            "composition": composition,
+            "heat_treatment": heat_treatment,
+            "mechanical_properties": mechanical_properties,
             "microstructure": steel_data["microstructure"],
-            "text_snippet": text[:1000] + "..." if text else ""
+            "text_snippet": text[:1000] + "..." if text else "",
+            "tables": tables,
+            "table_results": table_results,
+            "text_source": text_source,
         }
     except PDFSyntaxError as e:
         logger.error(f"PDF解析错误: {pdf_path}: {str(e)}")
@@ -214,6 +256,10 @@ def save_steel_data(dataset, output_dir):
 
     # 保存为Excel
     excel_path = os.path.join(output_dir, "steel_data.xlsx")
+
+    if pd is None:
+        logger.warning("缺少 pandas，跳过 Excel 导出")
+        return json_path, excel_path
 
     # 准备Excel数据
     excel_data = []

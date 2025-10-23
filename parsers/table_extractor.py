@@ -1,7 +1,10 @@
 # steel_miner/parsers/table_extractor.py
 import re
-import pandas as pd
-from bs4 import BeautifulSoup
+
+try:
+    import pandas as pd  # type: ignore
+except Exception:  # pragma: no cover - 允许在无 pandas 环境下继续解析流程
+    pd = None
 from . import xml_table_extractor, html_table_extractor, pdf_table_extractor
 
 
