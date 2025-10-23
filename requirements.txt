@@ -1,0 +1,4 @@
+pandas
+openpyxl
+pdfminer.six
+pydantic
